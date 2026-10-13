@@ -1,0 +1,27 @@
+name: Windows build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, test and package
+        shell: powershell
+        run: .\package.ps1
+      - name: Upload Windows preview artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipboardBridge-Windows
+          path: |
+            dist/ClipboardBridge-v*-Windows.zip
+            dist/SHA256SUMS.txt
+            dist/self-test-result.txt

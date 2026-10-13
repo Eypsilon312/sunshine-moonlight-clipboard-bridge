@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a clipboard, connection, or startup problem
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include pairing keys or sensitive clipboard contents."
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: App version, Windows versions on both PCs, Sunshine and Moonlight versions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include transfer direction and whether you copied text, files, or folders.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Status or error messages
