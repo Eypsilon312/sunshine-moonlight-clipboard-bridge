@@ -81,7 +81,7 @@ Local settings are stored in `%LOCALAPPDATA%\ClipboardBridge\settings.dat` using
 
 ## Build and test
 
-Use Windows PowerShell or PowerShell on Windows:
+Run these commands in PowerShell from the project folder:
 
 ```powershell
 .\build.ps1
