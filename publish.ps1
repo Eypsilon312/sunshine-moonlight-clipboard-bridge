@@ -8,8 +8,20 @@ $localGh = Join-Path $PSScriptRoot 'dist\tools\gh.exe'
 $installedGh = Get-Command gh -ErrorAction SilentlyContinue
 $gh = if ($installedGh) { $installedGh.Source } elseif (Test-Path -LiteralPath $localGh) { $localGh } else { throw 'Run setup-github.ps1 -Login first.' }
 function Invoke-GitChecked {
-    & git @args
-    if ($LASTEXITCODE -ne 0) { throw "git command failed: $($args[0])" }
+    # Preserve embedded quotes in credential helpers under Windows PowerShell 5.
+    $quoted = foreach ($argument in $args) {
+        '"' + [regex]::Replace([regex]::Replace([string]$argument, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'
+    }
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = (Get-Command git).Source
+    $info.Arguments = $quoted -join ' '
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $process = [System.Diagnostics.Process]::Start($info)
+    $process.WaitForExit()
+    $exitCode = $process.ExitCode
+    $process.Dispose()
+    if ($exitCode -ne 0) { throw "git command failed: $($args[0])" }
 }
 function Invoke-GhChecked {
     & $gh @args
