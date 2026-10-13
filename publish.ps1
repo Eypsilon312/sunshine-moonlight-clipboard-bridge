@@ -17,9 +17,15 @@ function Invoke-GitChecked {
     $info.Arguments = $quoted -join ' '
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
     $process = [System.Diagnostics.Process]::Start($info)
+    $stdout = $process.StandardOutput.ReadToEndAsync()
+    $stderr = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
     $exitCode = $process.ExitCode
+    if ($stdout.Result) { Write-Output $stdout.Result.TrimEnd() }
+    if ($stderr.Result) { Write-Output $stderr.Result.TrimEnd() }
     $process.Dispose()
     if ($exitCode -ne 0) { throw "git command failed: $($args[0])" }
 }
