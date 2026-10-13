@@ -5,5 +5,5 @@ using System.Reflection;
 [assembly: AssemblyProduct("Clipboard Bridge")]
 [assembly: AssemblyCopyright("Copyright (c) 2026 Eypsilon312")]
 [assembly: AssemblyVersion("0.1.0.0")]
-[assembly: AssemblyFileVersion("0.1.0.1")]
-[assembly: AssemblyInformationalVersion("0.1.0-beta.2")]
+[assembly: AssemblyFileVersion("0.1.0.2")]
+[assembly: AssemblyInformationalVersion("0.1.0-beta.3")]

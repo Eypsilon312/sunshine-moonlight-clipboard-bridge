@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$version = 'v0.1.0-beta.2'
+$version = 'v0.1.0-beta.3'
 & "$PSScriptRoot\build.ps1"
 & "$PSScriptRoot\test.ps1"
 $outDir = Join-Path $PSScriptRoot 'dist'

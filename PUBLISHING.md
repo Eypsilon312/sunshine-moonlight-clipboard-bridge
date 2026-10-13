@@ -1,6 +1,6 @@
 # Publishing to GitHub
 
-Target: `Eypsilon312/sunshine-moonlight-clipboard-bridge`. First public preview: `v0.1.0-beta.2`.
+Target: `Eypsilon312/sunshine-moonlight-clipboard-bridge`. Current public preview: `v0.1.0-beta.3`.
 
 ## Recommended release shape
 
@@ -23,8 +23,8 @@ If you have an installed GitHub CLI, `publish.ps1` uses it. If its login lacks w
 
 1. Create the public repository `sunshine-moonlight-clipboard-bridge` under Eypsilon312, without initializing a second README or license.
 2. Upload the prepared source files, `assets`, `docs`, and `.github` folders. Exclude `dist`, settings files, keys, and received files. A Git client is preferable for preserving the full folder structure.
-3. In **Releases**, choose **Draft a new release**, create tag `v0.1.0-beta.2`, and use the text from `RELEASE_NOTES.md`.
-4. Attach `dist\ClipboardBridge-v0.1.0-beta.2-Windows.zip` and `dist\SHA256SUMS.txt`, check **Set as a pre-release**, and publish.
+3. In **Releases**, choose **Draft a new release**, create tag `v0.1.0-beta.3`, and use the text from `RELEASE_NOTES.md`.
+4. Attach `dist\ClipboardBridge-v0.1.0-beta.3-Windows.zip` and `dist\SHA256SUMS.txt`, check **Set as a pre-release**, and publish.
 
 ## Introduce it to the community
 
@@ -32,7 +32,7 @@ Share the repository/release link in a relevant Moonlight or Sunshine community 
 
 Suggested English announcement:
 
-> I made an experimental Windows clipboard companion for Sunshine and Moonlight. It runs on both PCs alongside your existing installs and shares plain text, files, and folders in both directions using Ctrl+C / Ctrl+V. It includes encrypted LAN transport, automatic reconnection, and optional Windows sign-in startup.
+> I made an experimental Windows clipboard companion for Sunshine and Moonlight. It runs on both PCs alongside your existing installs and shares plain text, images, files, and folders in both directions using Ctrl+C / Ctrl+V. It includes encrypted LAN transport, automatic reconnection, and optional Windows sign-in startup.
 >
 > Files need to finish transferring before you paste; it is not RDP's on-demand transfer. This is an independent community workaround, not an official Sunshine/Moonlight feature. The first beta has automated tests, but I am looking for feedback from real two-PC setups. The executable is unsigned and the custom protocol has not had an external security audit. Intended for trusted LAN use.
 >

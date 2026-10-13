@@ -1,12 +1,12 @@
 # Clipboard Bridge for Sunshine / Moonlight
 
-A standalone Windows clipboard companion that shares **plain text, files, and folders in both directions** between two PCs on a local network. Copy on one PC and paste on the other using **Ctrl+C / Ctrl+V**, including in the remote desktop streamed through Moonlight.
+A standalone Windows clipboard companion that shares **plain text, images/screenshots, files, and folders in both directions** between two PCs on a local network. Copy on one PC and paste on the other using **Ctrl+C / Ctrl+V**, including in the remote desktop streamed through Moonlight.
 
 This is an **experimental community workaround**, independent of the Sunshine and Moonlight projects. It runs alongside your existing installations and requires no modifications to either project. It is not an official plugin, an RDP implementation, or a replacement for native clipboard support.
 
 ## Download
 
-Open [Releases](https://github.com/Eypsilon312/sunshine-moonlight-clipboard-bridge/releases) and download **ClipboardBridge-v0.1.0-beta.2-Windows.zip** from the release assets. GitHub's automatically generated source-code archives do not contain the executable.
+Open [Releases](https://github.com/Eypsilon312/sunshine-moonlight-clipboard-bridge/releases) and download **ClipboardBridge-v0.1.0-beta.3-Windows.zip** from the release assets. GitHub's automatically generated source-code archives do not contain the executable.
 
 Windows 10 / 11 with **.NET Framework 4.8** is required. No installation or .NET SDK is needed. The executable is unsigned; Windows may show a SmartScreen notice.
 
@@ -34,6 +34,10 @@ For **files and folders**, wait until the receiving app shows **Files received -
 
 For **text**, wait for **Text received - ready for Ctrl+V**, then paste into the target app. Clipboard changes normally appear quickly, but pasting before synchronization finishes can insert the previous clipboard contents.
 
+For **screenshots and clipboard images**, take a screenshot with **Win+Shift+S** or copy an image in an application. Wait for **Image received - ready for Ctrl+V** on the other PC, then paste into an image-capable application such as Paint, a document editor, or a chat app. Images are transferred losslessly as PNG and restored as a standard Windows clipboard bitmap. No image file is staged in the received-files folder. This does not create a file when you paste into Explorer; save the image from an image-capable app if you need a file. File copies from Explorer remain file transfers.
+
+Update **both PCs to beta 3 or later** for image sharing. Older versions cannot receive image-transfer messages. Clipboard images take priority over text when both formats are present; Explorer file lists take priority over images.
+
 Minimize the app to keep it in the system tray. Double-click the tray icon to reopen it. **Stop** pauses synchronization. Closing the window or choosing **Exit** from the tray menu exits the app. Synchronization remains active independently of Moonlight sessions while both companion apps are running.
 
 ## Start with Windows and reconnect
@@ -53,7 +57,7 @@ An interrupted file transfer is discarded and is not resumed. Copy the files aga
 - Allow enough free disk space for the temporary ZIP on each PC, the extracted files on the receiving PC, and the final destination copy.
 - Each transfer is limited to **10 GiB**, including the archive, and **100,000 archive entries**. Files are packaged without compression. Unicode names and empty folders are supported.
 - Symbolic links, junctions/reparse points, drive roots, and selections with duplicate top-level names are rejected.
-- Only plain text and Explorer file-drop lists are supported. Images, rich text/HTML formatting, virtual files, and Outlook attachments are not supported.
+- Plain text, Windows bitmap clipboard images/screenshots, and Explorer file-drop lists are supported. Rich text/HTML formatting, virtual files, and Outlook attachments are not supported. Images are limited to **32 MiB of PNG data**, **40 megapixels**, and **16,384 pixels per side**. Image sharing remains enabled when file/folder sharing is unchecked.
 - Use **Copy**, not Cut: transfers behave as copies and never delete the source.
 - If you copy something locally while files are being received, your newer clipboard is preserved. The received files remain available through **Received files**.
 - Simultaneous copying on both PCs can conflict; copy the intended selection again. Received clipboard contents are not automatically sent back.
@@ -87,7 +91,7 @@ Use Windows PowerShell or PowerShell on Windows:
 
 The build uses the Windows .NET Framework C# compiler, with no external packages. The icon is generated from drawing code by `create-icon.ps1` and embedded in the EXE in multiple sizes. The package script builds, runs the self-test, and creates a versioned Windows ZIP and `SHA256SUMS.txt` in `dist`.
 
-Tests cover authenticated encrypted text in both directions and multipart binary transfer over TCP loopback, Unicode, wrong keys, tampering, replay, file/folder round trips, unsafe archive paths, duplicate entries, packing cancellation, DPAPI settings round trips and replacement, and startup-command quoting. Tests do not change your actual startup entry or clipboard.
+Tests cover authenticated encrypted text in both directions and multipart binary transfer over TCP loopback, Unicode, wrong keys, tampering, replay, file/folder round trips, unsafe archive paths, duplicate entries, packing cancellation, DPAPI settings round trips and replacement, startup-command quoting, three-hour cache expiry, and multipart PNG transfer in both directions with pixel fidelity and invalid/truncated image rejection. Tests do not change your actual startup entry or clipboard. Screenshot capture and pasting into real apps on two physical PCs still require the manual verification checklist.
 
 For a manual verification checklist, see [TESTING.md](TESTING.md). For GitHub publishing and a community announcement draft, see [PUBLISHING.md](PUBLISHING.md).
 

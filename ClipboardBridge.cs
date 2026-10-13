@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
@@ -309,7 +310,84 @@ namespace ClipboardBridge
         }
     }
 
-    sealed class Snapshot { public string Text; public string[] Paths; }
+    static class Images
+    {
+        public const int MaxBytes = 32 * 1024 * 1024;
+        public static void CheckDimensions(int width, int height)
+        {
+            if (width <= 0 || height <= 0 || width > 16384 || height > 16384 || (long)width * height > 40000000)
+                throw new IOException("Image exceeds the limit of 40 megapixels or 16384 pixels per side.");
+        }
+        public static byte[] Encode(Image image)
+        {
+            CheckDimensions(image.Width, image.Height);
+            using (var stream = new MemoryStream())
+            {
+                image.Save(stream, ImageFormat.Png);
+                if (stream.Length > MaxBytes) throw new IOException("Clipboard image exceeds the 32 MiB PNG limit.");
+                return stream.ToArray();
+            }
+        }
+        static int ReadBigEndian(byte[] bytes, int offset)
+        {
+            uint value = ((uint)bytes[offset] << 24) | ((uint)bytes[offset + 1] << 16) | ((uint)bytes[offset + 2] << 8) | bytes[offset + 3];
+            if (value > Int32.MaxValue) throw new IOException("Invalid PNG dimensions.");
+            return (int)value;
+        }
+        public static Bitmap Decode(byte[] png)
+        {
+            byte[] signature = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+            if (png == null || png.Length < 33 || png.Length > MaxBytes || !Channel.Equal(Channel.Slice(png, 0, 8), signature)
+                || ReadBigEndian(png, 8) != 13 || Encoding.ASCII.GetString(png, 12, 4) != "IHDR") throw new IOException("Invalid PNG image.");
+            CheckDimensions(ReadBigEndian(png, 16), ReadBigEndian(png, 20));
+            try
+            {
+                using (var stream = new MemoryStream(png, false)) using (var image = Image.FromStream(stream, true, true))
+                {
+                    CheckDimensions(image.Width, image.Height);
+                    return new Bitmap(image); // Detach from the stream before disposing it.
+                }
+            }
+            catch (ArgumentException ex) { throw new IOException("Invalid PNG image.", ex); }
+            catch (ExternalException ex) { throw new IOException("Could not decode PNG image.", ex); }
+        }
+        public static void Send(Channel channel, byte[] png, Action pulse)
+        {
+            if (png == null || png.Length == 0 || png.Length > MaxBytes) throw new IOException("Invalid image size.");
+            channel.Send((byte)'I', BitConverter.GetBytes((long)png.Length));
+            for (int offset = 0; offset < png.Length; offset += 262144)
+            {
+                pulse(); channel.Send((byte)'J', Channel.Slice(png, offset, Math.Min(262144, png.Length - offset)));
+            }
+            channel.Send((byte)'K', new byte[0]);
+        }
+        public sealed class Incoming : IDisposable
+        {
+            readonly MemoryStream buffer = new MemoryStream();
+            readonly long expected;
+            public Incoming(byte[] frame)
+            {
+                if (frame.Length != 9 || frame[0] != 'I') throw new IOException("Invalid image transfer start.");
+                expected = BitConverter.ToInt64(frame, 1);
+                if (expected <= 0 || expected > MaxBytes) throw new IOException("Invalid image size.");
+            }
+            public void Add(byte[] frame)
+            {
+                if (frame.Length < 2 || frame[0] != 'J' || buffer.Length + frame.Length - 1 > expected) throw new IOException("Invalid image data.");
+                buffer.Write(frame, 1, frame.Length - 1);
+            }
+            public byte[] Finish(byte[] frame)
+            {
+                if (frame.Length != 1 || frame[0] != 'K' || buffer.Length != expected) throw new IOException("Incomplete image transfer.");
+                byte[] png = buffer.ToArray();
+                using (Bitmap decoded = Decode(png)) { } // Validate before updating the clipboard.
+                return png;
+            }
+            public void Dispose() { buffer.Dispose(); }
+        }
+    }
+
+    sealed class Snapshot { public string Text; public string[] Paths; public byte[] ImagePng; }
 
     sealed class BridgeForm : Form
     {
@@ -474,6 +552,14 @@ namespace ClipboardBridge
                     if (!syncFiles.Checked) { sequence = current; return; }
                     StringCollection files = Clipboard.GetFileDropList(); s.Paths = new string[files.Count]; files.CopyTo(s.Paths, 0);
                 }
+                else if (Clipboard.ContainsImage())
+                {
+                    using (Image image = Clipboard.GetImage())
+                    {
+                        if (image == null) return;
+                        s.ImagePng = Images.Encode(image);
+                    }
+                }
                 else if (Clipboard.ContainsText())
                 {
                     s.Text = Clipboard.GetText();
@@ -486,6 +572,8 @@ namespace ClipboardBridge
                 sequence = current; lock (gate) pending = s; changed.Set();
             }
             catch (ExternalException) { nextRetry = DateTime.UtcNow.AddMilliseconds(300); }
+            catch (IOException ex) { sequence = current; Report("Image was not sent: " + ex.Message); }
+            catch (ArgumentException ex) { sequence = current; Report("Image was not sent: " + ex.Message); }
         }
         void Run(bool server, string host, int number, byte[] secret)
         {
@@ -537,6 +625,12 @@ namespace ClipboardBridge
                     Snapshot s; lock (gate) { s = pending; pending = null; sendingPaths = s == null ? null : s.Paths; }
                     if (s == null) { channel.Send((byte)'H', new byte[0]); continue; }
                     if (s.Text != null) { channel.Send((byte)'T', Encoding.UTF8.GetBytes(s.Text)); Report("Text sent."); continue; }
+                    if (s.ImagePng != null)
+                    {
+                        Report("Sending clipboard image...");
+                        Images.Send(channel, s.ImagePng, delegate { if (!running || !connected) throw new IOException("Transfer cancelled."); });
+                        Report("Image sent."); continue;
+                    }
                     string archive = null;
                     try
                     {
@@ -575,12 +669,31 @@ namespace ClipboardBridge
         void ReceiveLoop(Channel channel)
         {
             string archive = null; FileStream output = null; long expected = 0, received = 0; uint before = 0; DateTime update = DateTime.MinValue;
+            Images.Incoming incomingImage = null;
             try
             {
                 while (running && connected)
                 {
                     byte[] frame = channel.Receive(); byte kind = frame[0];
                     if (kind == 'H') { if (frame.Length != 1) throw new IOException("Invalid heartbeat."); continue; }
+                    if (kind == 'I')
+                    {
+                        if (output != null || incomingImage != null) throw new IOException("Overlapping transfers.");
+                        incomingImage = new Images.Incoming(frame); before = GetClipboardSequenceNumber();
+                        Report("Receiving clipboard image..."); continue;
+                    }
+                    if (kind == 'J')
+                    {
+                        if (incomingImage == null) throw new IOException("Image data received without a transfer start.");
+                        incomingImage.Add(frame); continue;
+                    }
+                    if (kind == 'K')
+                    {
+                        if (incomingImage == null) throw new IOException("Image end received without a transfer start.");
+                        byte[] png = incomingImage.Finish(frame); incomingImage.Dispose(); incomingImage = null;
+                        Apply(new Snapshot { ImagePng = png }, before, 0); continue;
+                    }
+                    if (incomingImage != null) throw new IOException("Interrupted image transfer.");
                     if (kind == 'T')
                     {
                         if (output != null || frame.Length > 900001) throw new IOException("Invalid text message.");
@@ -615,7 +728,7 @@ namespace ClipboardBridge
                     throw new IOException("Unknown message.");
                 }
             }
-            finally { if (output != null) output.Dispose(); if (archive != null) File.Delete(archive); }
+            finally { if (incomingImage != null) incomingImage.Dispose(); if (output != null) output.Dispose(); if (archive != null) File.Delete(archive); }
         }
         void Apply(Snapshot s, uint expectedSequence, int attempt)
         {
@@ -625,7 +738,7 @@ namespace ClipboardBridge
                 if (!running || !connected || session != connectionId) return;
                 if (GetClipboardSequenceNumber() != expectedSequence)
                 {
-                    Report(s.Paths == null ? "Local clipboard changed; received text was discarded." : "Local clipboard changed. Files are in the received-files folder."); return;
+                    Report(s.Paths == null ? "Local clipboard changed; received text or image was discarded." : "Local clipboard changed. Files are in the received-files folder."); return;
                 }
                 try
                 {
@@ -634,10 +747,14 @@ namespace ClipboardBridge
                         if (!syncFiles.Checked) return;
                         var list = new StringCollection(); list.AddRange(s.Paths); Clipboard.SetFileDropList(list);
                     }
+                    else if (s.ImagePng != null)
+                    {
+                        using (Bitmap image = Images.Decode(s.ImagePng)) Clipboard.SetImage(image);
+                    }
                     else Clipboard.SetDataObject(new DataObject(DataFormats.UnicodeText, s.Text), true);
                     sequence = GetClipboardSequenceNumber();
                     lock (gate) pending = null;
-                    Report(s.Paths == null ? "Text received - ready for Ctrl+V" : "Files received - ready for Ctrl+V in Explorer");
+                    Report(s.Paths != null ? "Files received - ready for Ctrl+V in Explorer" : s.ImagePng != null ? "Image received - ready for Ctrl+V" : "Text received - ready for Ctrl+V");
                 }
                 catch (ExternalException)
                 {
@@ -656,12 +773,99 @@ namespace ClipboardBridge
             string result = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test-result.txt");
             try
             {
-                TestProtocol(); TestFiles(); TestSettings(); TestCleanup();
-                File.WriteAllText(result, "PASS: authenticated encrypted bidirectional frames; wrong-key rejection; tamper/replay rejection; Unicode/files/empty folders; path traversal and duplicate archive rejection; cancelled packing cleanup; DPAPI settings roundtrip and replacement; quoted autostart command; three-hour cache expiry and clipboard retention.\r\n");
+                TestProtocol(); TestFiles(); TestSettings(); TestCleanup(); TestImages();
+                File.WriteAllText(result, "PASS: authenticated encrypted bidirectional frames; wrong-key rejection; tamper/replay rejection; Unicode/files/empty folders; path traversal and duplicate archive rejection; cancelled packing cleanup; DPAPI settings roundtrip and replacement; quoted autostart command; three-hour cache expiry and clipboard retention; multipart PNG transfer in both directions, pixel roundtrip, invalid/truncated image rejection.\r\n");
             }
             catch (Exception ex) { File.WriteAllText(result, "FAIL: " + ex); Environment.ExitCode = 1; }
         }
         static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
+        static byte[] ReadImage(Channel channel)
+        {
+            using (var incoming = new Images.Incoming(channel.Receive()))
+            {
+                while (true)
+                {
+                    byte[] frame = channel.Receive();
+                    if (frame[0] == 'K') return incoming.Finish(frame);
+                    incoming.Add(frame);
+                }
+            }
+        }
+        static void TestImages()
+        {
+            byte[] png;
+            using (var image = new Bitmap(1024, 1024, PixelFormat.Format32bppArgb))
+            {
+                var data = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    byte[] pixels = new byte[data.Stride * image.Height]; new Random(12345).NextBytes(pixels);
+                    for (int i = 3; i < pixels.Length; i += 4) pixels[i] = 255;
+                    Marshal.Copy(pixels, 0, data.Scan0, pixels.Length);
+                }
+                finally { image.UnlockBits(data); }
+                png = Images.Encode(image);
+                Assert(png.Length > 1024 * 1024, "Image exercises multiple frames beyond frame limit");
+                using (var decoded = Images.Decode(png))
+                {
+                    Assert(decoded.Width == image.Width && decoded.Height == image.Height, "Image dimensions roundtrip");
+                    for (int y = 0; y < 1024; y += 127) for (int x = 0; x < 1024; x += 131)
+                        Assert(decoded.GetPixel(x, y).ToArgb() == image.GetPixel(x, y).ToArgb(), "Lossless image pixels");
+                    var clipboardObject = new DataObject(DataFormats.Bitmap, decoded);
+                    Assert(clipboardObject.GetDataPresent(DataFormats.Bitmap), "Bitmap clipboard format");
+                }
+            }
+            byte[] secret = Channel.RandomBytes(32);
+            var listener = new TcpListener(IPAddress.Loopback, 0); listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port; Exception error = null;
+            var server = new Thread(delegate()
+            {
+                try
+                {
+                    using (var peer = listener.AcceptTcpClient())
+                    {
+                        peer.SendTimeout = peer.ReceiveTimeout = 10000;
+                        using (var channel = new Channel(peer.GetStream(), secret, true))
+                        {
+                            Assert(Channel.Equal(ReadImage(channel), png), "Client-to-host image");
+                            Images.Send(channel, png, delegate { });
+                        }
+                    }
+                }
+                catch (Exception ex) { error = ex; }
+            }); server.Start();
+            try
+            {
+                using (var peer = new TcpClient("127.0.0.1", port))
+                {
+                    peer.SendTimeout = peer.ReceiveTimeout = 10000;
+                    using (var channel = new Channel(peer.GetStream(), secret, false))
+                    {
+                        Images.Send(channel, png, delegate { });
+                        Assert(Channel.Equal(ReadImage(channel), png), "Host-to-client image");
+                    }
+                }
+            }
+            finally { server.Join(15000); listener.Stop(); }
+            if (error != null) throw error;
+            bool rejected = false;
+            using (var incomplete = new Images.Incoming(Channel.Join(new byte[] { (byte)'I' }, BitConverter.GetBytes((long)png.Length))))
+            {
+                incomplete.Add(Channel.Join(new byte[] { (byte)'J' }, Channel.Slice(png, 0, 100)));
+                try { incomplete.Finish(new byte[] { (byte)'K' }); } catch (IOException) { rejected = true; }
+            }
+            Assert(rejected, "Incomplete PNG rejected");
+            rejected = false;
+            try { using (var tooLarge = new Images.Incoming(Channel.Join(new byte[] { (byte)'I' }, BitConverter.GetBytes((long)Images.MaxBytes + 1)))) { } }
+            catch (IOException) { rejected = true; } Assert(rejected, "Oversized image transfer rejected");
+            rejected = false;
+            byte[] invalid = (byte[])png.Clone(); invalid[0] = 0;
+            try { using (var decoded = Images.Decode(invalid)) { } } catch (IOException) { rejected = true; }
+            Assert(rejected, "Invalid PNG signature rejected");
+            rejected = false; invalid = (byte[])png.Clone(); invalid[16] = 127;
+            try { using (var decoded = Images.Decode(invalid)) { } } catch (IOException) { rejected = true; }
+            Assert(rejected, "Excessive image dimensions rejected before decoding");
+        }
         static void TestCleanup()
         {
             string root = Path.Combine(Path.GetTempPath(), "ClipboardBridge-cleanup-test-" + Guid.NewGuid().ToString("N"));

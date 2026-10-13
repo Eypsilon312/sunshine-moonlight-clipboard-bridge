@@ -69,11 +69,11 @@ try {
     $helper = '!"' + ($gh -replace '\\', '/') + '" auth git-credential'
     Invoke-GitChecked add -- .gitignore .gitattributes .github assets docs AssemblyInfo.cs ClipboardBridge.cs LICENSE README.md CHANGELOG.md RELEASE_NOTES.md TESTING.md PUBLISHING.md build.ps1 create-icon.ps1 test.ps1 package.ps1 setup-github.ps1 publish.ps1
     & git diff --cached --quiet
-    if ($LASTEXITCODE -eq 1) { Invoke-GitChecked commit -m 'Prepare English Clipboard Bridge v0.1.0-beta.2 public preview' }
+    if ($LASTEXITCODE -eq 1) { Invoke-GitChecked commit -m 'Prepare English Clipboard Bridge v0.1.0-beta.3 public preview' }
     elseif ($LASTEXITCODE -ne 0) { throw 'Could not inspect staged changes.' }
     Invoke-GitChecked -c credential.helper= -c "credential.helper=$helper" push -u origin main
     Invoke-GhChecked repo edit $repo --add-topic sunshine --add-topic moonlight --add-topic clipboard --add-topic windows --add-topic file-transfer
-    $version = 'v0.1.0-beta.2'
+    $version = 'v0.1.0-beta.3'
     $existingTag = & git tag --list $version
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect existing tags.' }
     if (-not $existingTag) { Invoke-GitChecked tag -a $version -m 'Clipboard Bridge Windows public preview' }
@@ -83,7 +83,7 @@ try {
     Invoke-GitChecked -c credential.helper= -c "credential.helper=$helper" push origin $version
     $releaseResult = Invoke-GhOptional release view $version --repo $repo --json url
     if ($releaseResult.ExitCode -ne 0) {
-        Invoke-GhChecked release create $version (Join-Path $PSScriptRoot "dist\ClipboardBridge-$version-Windows.zip") (Join-Path $PSScriptRoot 'dist\SHA256SUMS.txt') --repo $repo --verify-tag --prerelease --title 'Clipboard Bridge v0.1.0-beta.2 - Windows public preview' --notes-file (Join-Path $PSScriptRoot 'RELEASE_NOTES.md')
+        Invoke-GhChecked release create $version (Join-Path $PSScriptRoot "dist\ClipboardBridge-$version-Windows.zip") (Join-Path $PSScriptRoot 'dist\SHA256SUMS.txt') --repo $repo --verify-tag --prerelease --title 'Clipboard Bridge v0.1.0-beta.3 - Windows public preview' --notes-file (Join-Path $PSScriptRoot 'RELEASE_NOTES.md')
     } else { Write-Output 'The release already exists; assets were not overwritten.' }
     Invoke-GhChecked release view $version --repo $repo --json 'url,isPrerelease,assets'
 } finally { Pop-Location }

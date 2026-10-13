@@ -5,6 +5,10 @@ Use two Windows PCs running Sunshine and Moonlight. These checks require a real 
 - [ ] Pair both apps on a private LAN and confirm Connected.
 - [ ] Copy Unicode text and multiline text client to host; paste in the host's text editor.
 - [ ] Copy different text host to client; paste in the local client's text editor.
+- [ ] On the client, capture a screenshot using Win+Shift+S; wait for the host's image-ready status and paste in the host's Paint or another image-capable app.
+- [ ] Capture a different screenshot on the host, then paste into the client's Paint. Check dimensions, colors, and image quality.
+- [ ] Transfer a large or multi-monitor screenshot and confirm it arrives completely, creates no received-file cache, and does not keep bouncing back between PCs.
+- [ ] Copy something new on the receiver during image reception; confirm the newer local clipboard is preserved.
 - [ ] Transfer one file in each direction; paste into a chosen Explorer folder and compare SHA-256 hashes.
 - [ ] Transfer a folder with nested files, Unicode names, and an empty folder; compare the results.
 - [ ] Transfer a larger file and confirm progress and ready status before pasting.
@@ -17,4 +21,4 @@ Use two Windows PCs running Sunshine and Moonlight. These checks require a real 
 - [ ] Disable startup and confirm the ClipboardBridge Run entry is removed.
 - [ ] Keep a received file in the clipboard for more than three hours: pasting must still work. Copy unrelated text, wait for the next minute sweep, and confirm the expired transfer cache is removed but the pasted destination copy remains.
 
-Report Windows versions, app version, Moonlight/Sunshine versions, transfer direction, and relevant status messages. Do not include pairing keys or sensitive clipboard data.
+For image transfers, update both PCs to beta 3 or later. Report Windows versions, app version, Moonlight/Sunshine versions, transfer direction, and relevant status messages. Do not include pairing keys or sensitive clipboard data.
