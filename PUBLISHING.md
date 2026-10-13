@@ -1,6 +1,6 @@
 # Publishing to GitHub
 
-Target: `Eypsilon312/sunshine-moonlight-clipboard-bridge`. First public preview: `v0.1.0-beta.1`.
+Target: `Eypsilon312/sunshine-moonlight-clipboard-bridge`. First public preview: `v0.1.0-beta.2`.
 
 ## Recommended release shape
 
@@ -23,8 +23,8 @@ If you have an installed GitHub CLI, `publish.ps1` uses it. If its login lacks w
 
 1. Create the public repository `sunshine-moonlight-clipboard-bridge` under Eypsilon312, without initializing a second README or license.
 2. Upload the prepared source files, `assets`, `docs`, and `.github` folders. Exclude `dist`, settings files, keys, and received files. A Git client is preferable for preserving the full folder structure.
-3. In **Releases**, choose **Draft a new release**, create tag `v0.1.0-beta.1`, and use the text from `RELEASE_NOTES.md`.
-4. Attach `dist\ClipboardBridge-v0.1.0-beta.1-Windows.zip` and `dist\SHA256SUMS.txt`, check **Set as a pre-release**, and publish.
+3. In **Releases**, choose **Draft a new release**, create tag `v0.1.0-beta.2`, and use the text from `RELEASE_NOTES.md`.
+4. Attach `dist\ClipboardBridge-v0.1.0-beta.2-Windows.zip` and `dist\SHA256SUMS.txt`, check **Set as a pre-release**, and publish.
 
 ## Introduce it to the community
 

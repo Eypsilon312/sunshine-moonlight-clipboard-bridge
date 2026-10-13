@@ -15,5 +15,6 @@ Use two Windows PCs running Sunshine and Moonlight. These checks require a real 
 - [ ] Enable startup on both PCs, reboot the host, sign in, and confirm automatic reconnection without manually starting the host app.
 - [ ] Interrupt the network mid-transfer; confirm incomplete files are not published to the clipboard. Reconnect and copy again.
 - [ ] Disable startup and confirm the ClipboardBridge Run entry is removed.
+- [ ] Keep a received file in the clipboard for more than three hours: pasting must still work. Copy unrelated text, wait for the next minute sweep, and confirm the expired transfer cache is removed but the pasted destination copy remains.
 
 Report Windows versions, app version, Moonlight/Sunshine versions, transfer direction, and relevant status messages. Do not include pairing keys or sensitive clipboard data.

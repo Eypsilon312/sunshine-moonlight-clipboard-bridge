@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.0-beta.2
+
+- Automatically remove received-file cache folders after three hours.
+- Retain files referenced by the current clipboard, queued or active outgoing transfers, and active receptions.
+- Sweep on startup and once per minute; retry busy folders later.
+- Add cache-expiry and clipboard-retention tests.
+
 ## v0.1.0-beta.1
 
 First public preview of Clipboard Bridge for Windows.

@@ -1,10 +1,12 @@
-# Clipboard Bridge v0.1.0-beta.1 - Windows public preview
+# Clipboard Bridge v0.1.0-beta.2 - Windows public preview
+
+This update adds automatic received-file cache cleanup after **three hours**, checked at startup and every minute. Files still in the clipboard or being sent are retained so pasting keeps working. Your original files and already pasted destination copies are never removed by this cleanup. Busy folders are retried later, and cleanup requires the app to be running.
 
 Share plain text, files, and folders between your Sunshine host and Moonlight client using Ctrl+C / Ctrl+V. Run this standalone companion on both Windows PCs; no Sunshine or Moonlight modifications are needed.
 
 ## Download and run
 
-Download **ClipboardBridge-v0.1.0-beta.1-Windows.zip**, extract it on both PCs, and run `ClipboardBridge.exe`. Requires Windows 10 / 11 with .NET Framework 4.8. Set one PC to Host and the other to Client, enter the host LAN IP, and use the same generated pairing key on both PCs.
+Download **ClipboardBridge-v0.1.0-beta.2-Windows.zip**, extract it on both PCs, and run `ClipboardBridge.exe`. Requires Windows 10 / 11 with .NET Framework 4.8. Set one PC to Host and the other to Client, enter the host LAN IP, and use the same generated pairing key on both PCs.
 
 Includes an English interface, automatic reconnection, optional Windows sign-in startup, protected saved settings, and a custom app icon. `SHA256SUMS.txt` contains the ZIP and EXE SHA-256 checksums.
 

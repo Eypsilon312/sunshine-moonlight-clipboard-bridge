@@ -6,7 +6,7 @@ This is an **experimental community workaround**, independent of the Sunshine an
 
 ## Download
 
-Open [Releases](https://github.com/Eypsilon312/sunshine-moonlight-clipboard-bridge/releases) and download **ClipboardBridge-v0.1.0-beta.1-Windows.zip** from the release assets. GitHub's automatically generated source-code archives do not contain the executable.
+Open [Releases](https://github.com/Eypsilon312/sunshine-moonlight-clipboard-bridge/releases) and download **ClipboardBridge-v0.1.0-beta.2-Windows.zip** from the release assets. GitHub's automatically generated source-code archives do not contain the executable.
 
 Windows 10 / 11 with **.NET Framework 4.8** is required. No installation or .NET SDK is needed. The executable is unsigned; Windows may show a SmartScreen notice.
 
@@ -49,7 +49,7 @@ An interrupted file transfer is discarded and is not resumed. Copy the files aga
 ## File behavior and limitations
 
 - Files are fully transferred and staged before pasting becomes available. This differs from RDP's on-demand file transfer. Large transfers take time; wait for the receiving app's ready status.
-- Received files stay in `%LOCALAPPDATA%\ClipboardBridge\Received`, in a separate folder per transfer. Open them using **Received files**. Explorer copies them into your chosen destination when you paste. Remove old staged files manually when you no longer need them.
+- Received files are staged in `%LOCALAPPDATA%\ClipboardBridge\Received`, in a separate folder per transfer. Open them using **Received files**. Explorer copies them into your chosen destination when you paste. The app checks at startup and every minute and removes transfer folders older than **three hours**. Files still referenced by the current clipboard or an outgoing transfer are retained until no longer in use. Busy files are retried later. Cleanup runs only while the app is open; it never deletes your source files or copies in your chosen destination folder.
 - Allow enough free disk space for the temporary ZIP on each PC, the extracted files on the receiving PC, and the final destination copy.
 - Each transfer is limited to **10 GiB**, including the archive, and **100,000 archive entries**. Files are packaged without compression. Unicode names and empty folders are supported.
 - Symbolic links, junctions/reparse points, drive roots, and selections with duplicate top-level names are rejected.

@@ -115,6 +115,51 @@ namespace ClipboardBridge
     {
         public const long MaxBytes = 10L * 1024 * 1024 * 1024;
         const int MaxEntries = 100000;
+        static readonly object cacheGate = new object();
+        static readonly HashSet<string> activeReceives = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public static int Cleanup(string baseDirectory, string[] protectedPaths, DateTime now)
+        {
+            if (!Directory.Exists(baseDirectory)) return 0;
+            string root = Path.GetFullPath(baseDirectory).TrimEnd(Path.DirectorySeparatorChar);
+            if ((File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0) return 0;
+            int removed = 0;
+            foreach (string folder in Directory.EnumerateDirectories(root))
+            {
+                try
+                {
+                    Guid id;
+                    string full = Path.GetFullPath(folder);
+                    if (!Guid.TryParseExact(Path.GetFileName(full), "N", out id) || Path.GetDirectoryName(full) != root) continue;
+                    if ((File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0) continue;
+                    if (Directory.GetLastWriteTimeUtc(full) > now.AddHours(-3)) continue;
+                    bool keep = false;
+                    foreach (string path in protectedPaths)
+                    {
+                        string item = Path.GetFullPath(path);
+                        if (String.Equals(item, full, StringComparison.OrdinalIgnoreCase) || item.StartsWith(full + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) { keep = true; break; }
+                    }
+                    if (keep || HasLinks(full)) continue;
+                    lock (cacheGate)
+                    {
+                        if (activeReceives.Contains(full)) continue;
+                        Directory.Delete(full, true); removed++;
+                    }
+                }
+                catch (IOException) { } // Busy files are retried at the next sweep.
+                catch (UnauthorizedAccessException) { }
+            }
+            return removed;
+        }
+        static bool HasLinks(string folder)
+        {
+            foreach (string path in Directory.EnumerateFileSystemEntries(folder))
+            {
+                FileAttributes attr = File.GetAttributes(path);
+                if ((attr & FileAttributes.ReparsePoint) != 0) return true;
+                if ((attr & FileAttributes.Directory) != 0 && HasLinks(path)) return true;
+            }
+            return false;
+        }
         public static string BaseDirectory { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClipboardBridge", "Received"); } }
         public static string Pack(string[] paths) { return Pack(paths, delegate { }); }
         public static string Pack(string[] paths, Action pulse)
@@ -184,9 +229,10 @@ namespace ClipboardBridge
         public static string[] Unpack(string archive)
         {
             string root = Path.Combine(BaseDirectory, Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(root);
+            lock (cacheGate) activeReceives.Add(root);
             try
             {
+                Directory.CreateDirectory(root);
                 var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var entries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 long total = 0;
@@ -212,9 +258,11 @@ namespace ClipboardBridge
                     }
                 }
                 if (roots.Count == 0) throw new IOException("Empty archive.");
+                Directory.SetLastWriteTimeUtc(root, DateTime.UtcNow);
                 string[] result = new string[roots.Count]; roots.CopyTo(result); return result;
             }
-            catch { Directory.Delete(root, true); throw; }
+            catch { if (Directory.Exists(root)) Directory.Delete(root, true); throw; }
+            finally { lock (cacheGate) activeReceives.Remove(root); }
         }
     }
 
@@ -276,6 +324,8 @@ namespace ClipboardBridge
         readonly Label status = new Label();
         readonly TextBox log = new TextBox();
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
+        readonly System.Windows.Forms.Timer cleanupTimer = new System.Windows.Forms.Timer();
+        bool cleaning;
         readonly AutoResetEvent changed = new AutoResetEvent(false);
         readonly object gate = new object();
         readonly NotifyIcon tray = new NotifyIcon();
@@ -285,6 +335,7 @@ namespace ClipboardBridge
         TcpClient client;
         Thread worker;
         Snapshot pending;
+        string[] sendingPaths;
         uint sequence;
         DateTime nextRetry;
         public BridgeForm() : this(false) { }
@@ -307,11 +358,12 @@ namespace ClipboardBridge
             autoStart.SetBounds(20, 345, 610, 28); Controls.Add(autoStart);
             log.SetBounds(20, 385, 610, 120); log.Multiline = true; log.ReadOnly = true; log.ScrollBars = ScrollBars.Vertical; Controls.Add(log);
             timer.Interval = 150; timer.Tick += delegate { PollClipboard(); }; timer.Start();
+            cleanupTimer.Interval = 60000; cleanupTimer.Tick += delegate { CleanupCache(); }; cleanupTimer.Start();
             tray.Icon = Icon; tray.Text = "Clipboard Bridge"; tray.Visible = true;
             var menu = new ContextMenuStrip(); menu.Items.Add("Open", null, delegate { Show(); WindowState = FormWindowState.Normal; Activate(); }); menu.Items.Add("Exit", null, delegate { Close(); }); tray.ContextMenuStrip = menu;
             tray.DoubleClick += delegate { Show(); WindowState = FormWindowState.Normal; Activate(); };
             Resize += delegate { if (WindowState == FormWindowState.Minimized) Hide(); };
-            FormClosing += delegate { StopBridge(); timer.Stop(); tray.Dispose(); };
+            FormClosing += delegate { StopBridge(); timer.Stop(); cleanupTimer.Stop(); tray.Dispose(); };
             loadingSettings = true;
             try
             {
@@ -344,12 +396,38 @@ namespace ClipboardBridge
             syncFiles.CheckedChanged += delegate { try { SaveSettings(); } catch (Exception ex) { Report("Saving settings: " + ex.Message); } };
             Shown += delegate
             {
+                CleanupCache();
                 if (startup && autoStart.Checked)
                 {
                     StartBridge();
                     if (running) { WindowState = FormWindowState.Minimized; Hide(); }
                 }
             };
+        }
+        void CleanupCache()
+        {
+            if (cleaning) return;
+            try
+            {
+                // Clipboard access stays on the UI STA thread. If busy, defer all deletion.
+                var protectedPaths = new List<string>();
+                if (Clipboard.ContainsFileDropList()) foreach (string path in Clipboard.GetFileDropList()) protectedPaths.Add(path);
+                lock (gate) { if (pending != null && pending.Paths != null) protectedPaths.AddRange(pending.Paths); }
+                lock (gate) { if (sendingPaths != null) protectedPaths.AddRange(sendingPaths); }
+                cleaning = true;
+                ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try
+                    {
+                        int count = Files.Cleanup(Files.BaseDirectory, protectedPaths.ToArray(), DateTime.UtcNow);
+                        if (count > 0) Report("Removed " + count + " expired received-file cache folder(s).");
+                    }
+                    catch (IOException) { }
+                    catch (UnauthorizedAccessException) { }
+                    finally { Ui(delegate { cleaning = false; }); }
+                });
+            }
+            catch (ExternalException) { } // Clipboard unavailable: retry in one minute.
         }
         void SaveSettings()
         {
@@ -456,7 +534,7 @@ namespace ClipboardBridge
                 {
                     changed.WaitOne(10000);
                     if (!running || !connected) break;
-                    Snapshot s; lock (gate) { s = pending; pending = null; }
+                    Snapshot s; lock (gate) { s = pending; pending = null; sendingPaths = s == null ? null : s.Paths; }
                     if (s == null) { channel.Send((byte)'H', new byte[0]); continue; }
                     if (s.Text != null) { channel.Send((byte)'T', Encoding.UTF8.GetBytes(s.Text)); Report("Text sent."); continue; }
                     string archive = null;
@@ -492,6 +570,7 @@ namespace ClipboardBridge
                 }
             }
             catch (Exception ex) { if (running) Report("Sending: " + ex.Message); connected = false; peer.Close(); }
+            finally { lock (gate) sendingPaths = null; }
         }
         void ReceiveLoop(Channel channel)
         {
@@ -577,12 +656,29 @@ namespace ClipboardBridge
             string result = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "self-test-result.txt");
             try
             {
-                TestProtocol(); TestFiles(); TestSettings();
-                File.WriteAllText(result, "PASS: authenticated encrypted bidirectional frames; wrong-key rejection; tamper/replay rejection; Unicode/files/empty folders; path traversal and duplicate archive rejection; cancelled packing cleanup; DPAPI settings roundtrip and replacement; quoted autostart command.\r\n");
+                TestProtocol(); TestFiles(); TestSettings(); TestCleanup();
+                File.WriteAllText(result, "PASS: authenticated encrypted bidirectional frames; wrong-key rejection; tamper/replay rejection; Unicode/files/empty folders; path traversal and duplicate archive rejection; cancelled packing cleanup; DPAPI settings roundtrip and replacement; quoted autostart command; three-hour cache expiry and clipboard retention.\r\n");
             }
             catch (Exception ex) { File.WriteAllText(result, "FAIL: " + ex); Environment.ExitCode = 1; }
         }
         static void Assert(bool condition, string message) { if (!condition) throw new Exception(message); }
+        static void TestCleanup()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "ClipboardBridge-cleanup-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                DateTime now = DateTime.UtcNow;
+                string expired = Path.Combine(root, Guid.NewGuid().ToString("N")), current = Path.Combine(root, Guid.NewGuid().ToString("N")), recent = Path.Combine(root, Guid.NewGuid().ToString("N"));
+                foreach (string folder in new string[] { expired, current, recent }) { Directory.CreateDirectory(folder); File.WriteAllText(Path.Combine(folder, "sample.txt"), "test"); }
+                Directory.SetLastWriteTimeUtc(expired, now.AddHours(-4)); Directory.SetLastWriteTimeUtc(current, now.AddHours(-4)); Directory.SetLastWriteTimeUtc(recent, now.AddHours(-2));
+                string unrelated = Path.Combine(root, "personal-folder"); Directory.CreateDirectory(unrelated); Directory.SetLastWriteTimeUtc(unrelated, now.AddHours(-4));
+                Assert(Files.Cleanup(root, new string[] { Path.Combine(current, "sample.txt") }, now) == 1, "Remove only expired, unreferenced cache");
+                Assert(!Directory.Exists(expired) && Directory.Exists(current) && Directory.Exists(recent) && Directory.Exists(unrelated), "Retain current clipboard, recent and unrelated folders");
+                Assert(Files.Cleanup(root, new string[0], now) == 1 && !Directory.Exists(current), "Remove expired cache after clipboard release");
+            }
+            finally { Directory.Delete(root, true); }
+        }
         static void TestSettings()
         {
             string root = Path.Combine(Path.GetTempPath(), "ClipboardBridge-settings-" + Guid.NewGuid().ToString("N"));
