@@ -85,5 +85,5 @@ try {
     if ($releaseResult.ExitCode -ne 0) {
         Invoke-GhChecked release create $version (Join-Path $PSScriptRoot "dist\ClipboardBridge-$version-Windows.zip") (Join-Path $PSScriptRoot 'dist\SHA256SUMS.txt') --repo $repo --verify-tag --prerelease --title 'Clipboard Bridge v0.1.0-beta.1 - Windows public preview' --notes-file (Join-Path $PSScriptRoot 'RELEASE_NOTES.md')
     } else { Write-Output 'The release already exists; assets were not overwritten.' }
-    Invoke-GhChecked release view $version --repo $repo --json url,isPrerelease,assets
+    Invoke-GhChecked release view $version --repo $repo --json 'url,isPrerelease,assets'
 } finally { Pop-Location }
